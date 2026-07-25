@@ -9,7 +9,25 @@ from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from pathlib import Path
+
 from .simple_models import GeoPoint
+
+BRAND_POI_PATH = Path(__file__).resolve().parent.parent / "data" / "shanghai_brand_pois.json"
+_BRAND_POIS: list[dict[str, Any]] | None = None
+
+
+def load_brand_pois() -> list[dict[str, Any]]:
+    global _BRAND_POIS
+    if _BRAND_POIS is not None:
+        return _BRAND_POIS
+    if BRAND_POI_PATH.exists():
+        raw = json.loads(BRAND_POI_PATH.read_text(encoding="utf-8"))
+        _BRAND_POIS = list(raw) if isinstance(raw, list) else []
+    else:
+        _BRAND_POIS = []
+    return _BRAND_POIS
+
 
 # 各区中心点 + 常用路段/地标，保证无 AK 时也能模糊命中
 DISTRICT_CENTERS: list[dict[str, Any]] = [
@@ -77,21 +95,24 @@ class BaiduMapClient:
         self.ak = (ak if ak is not None else get_ak()) or ""
 
     def suggest(
-        self, query: str, city: str = "上海", limit: int = 10
+        self, query: str, city: str = "上海", limit: int = 25
     ) -> tuple[list[dict[str, Any]], str]:
-        """返回 (结果列表, 模式说明)。模式：baidu / fuzzy / baidu+fuzzy。"""
+        """返回 (结果列表, 模式说明)。模式：baidu / fuzzy / baidu+fuzzy。
+
+        品牌/机构名（如「新东方」）会尽量列出上海多处门店/校区供选择。
+        """
         q = (query or "").strip()
         if not q:
-            fuzzy = self._fuzzy_suggest("", limit=limit)
-            for item in fuzzy:
-                item["mode"] = "fuzzy"
-            return fuzzy, "fuzzy"
+            return [], "fuzzy"
 
         baidu_hits: list[dict[str, Any]] = []
         mode = "fuzzy"
         if self.ak:
             try:
-                baidu_hits = self._baidu_suggest(q, city=city, limit=limit)
+                # Place Search 更适合「同名多点」；suggestion 作补充
+                place_hits = self._baidu_place_search(q, city=city, limit=limit)
+                sug_hits = self._baidu_suggest(q, city=city, limit=limit)
+                baidu_hits = _merge_places(place_hits + sug_hits, limit=limit)
                 for item in baidu_hits:
                     item["mode"] = "baidu"
                 mode = "baidu"
@@ -99,16 +120,24 @@ class BaiduMapClient:
                 baidu_hits = []
                 mode = "fuzzy"
 
+        brand_hits = self._brand_poi_suggest(q, limit=limit)
+        for item in brand_hits:
+            item.setdefault("mode", "catalog")
+
         if baidu_hits:
-            return baidu_hits[:limit], mode
+            merged = _merge_places(baidu_hits + brand_hits, limit=limit)
+            # 品牌库补全后仍可能混入 catalog
+            return merged, ("baidu+catalog" if brand_hits else mode)
 
         fuzzy = self._fuzzy_suggest(q, limit=limit)
         for item in fuzzy:
-            item["mode"] = "fuzzy"
-        return fuzzy, "fuzzy"
+            item["mode"] = item.get("mode") or "fuzzy"
+        if fuzzy:
+            return fuzzy[:limit], ("catalog" if all(i.get("mode") == "catalog" for i in fuzzy) else "fuzzy")
+        return [], "fuzzy"
 
     def _baidu_suggest(
-        self, query: str, city: str = "上海", limit: int = 10
+        self, query: str, city: str = "上海", limit: int = 25
     ) -> list[dict[str, Any]]:
         params = urlencode(
             {
@@ -136,6 +165,11 @@ class BaiduMapClient:
                 continue
             addr = item.get("address") or ""
             name = item.get("name") or ""
+            # 仅保留上海结果
+            blob = f"{addr}{name}{item.get('city') or ''}"
+            if "上海" not in blob and city == "上海":
+                # suggestion 在 city_limit 下一般已限城；无 city 字段时仍收
+                pass
             results.append(
                 {
                     "name": name,
@@ -150,12 +184,116 @@ class BaiduMapClient:
                 break
         return results
 
+    def _baidu_place_search(
+        self, query: str, city: str = "上海", limit: int = 25
+    ) -> list[dict[str, Any]]:
+        """百度 Place Search：同名品牌在全市的多门店结果。"""
+        results: list[dict[str, Any]] = []
+        page_size = min(20, max(10, limit))
+        pages = max(1, (limit + page_size - 1) // page_size)
+        for page_num in range(min(pages, 3)):
+            params = urlencode(
+                {
+                    "query": query,
+                    "region": city,
+                    "city_limit": "true",
+                    "output": "json",
+                    "ak": self.ak,
+                    "page_size": page_size,
+                    "page_num": page_num,
+                    "scope": 2,
+                }
+            )
+            url = f"https://api.map.baidu.com/place/v2/search?{params}"
+            req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if data.get("status") != 0:
+                if page_num == 0:
+                    raise BaiduMapError(
+                        f"百度检索 status={data.get('status')} {data.get('message')}"
+                    )
+                break
+            batch = data.get("results") or []
+            if not batch:
+                break
+            for item in batch:
+                loc = item.get("location") or {}
+                if "lng" not in loc or "lat" not in loc:
+                    continue
+                addr = item.get("address") or ""
+                name = item.get("name") or ""
+                area = item.get("area") or ""
+                results.append(
+                    {
+                        "name": name,
+                        "address": addr or f"上海市{area}{name}",
+                        "district": _extract_district(f"{addr}{area}{name}"),
+                        "lng": float(loc["lng"]),
+                        "lat": float(loc["lat"]),
+                        "uid": item.get("uid", ""),
+                    }
+                )
+                if len(results) >= limit:
+                    return results
+            total = int(data.get("total") or 0)
+            if (page_num + 1) * page_size >= total:
+                break
+        return results
+
+    def _brand_poi_suggest(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
+        """本地品牌/机构 POI 库：保证「新东方」等能列出上海多点。"""
+        q_raw = (query or "").strip()
+        if len(q_raw) < 2:
+            return []
+        q = _normalize_query(q_raw)
+        q_district = _extract_district(q_raw)
+        out: list[dict[str, Any]] = []
+        for p in load_brand_pois():
+            name = str(p.get("name") or "")
+            addr = str(p.get("address") or "")
+            brand = str(p.get("brand") or "")
+            district = str(p.get("district") or _extract_district(f"{name}{addr}"))
+            blob = f"{name}{addr}{brand}"
+            if q not in blob and q_raw not in blob:
+                continue
+            if q_district and district and q_district != district:
+                # 指定了区则只保留该区
+                if q_district not in name and q_district not in addr:
+                    continue
+            out.append(
+                {
+                    "name": name,
+                    "address": addr,
+                    "district": district,
+                    "lng": float(p["lng"]),
+                    "lat": float(p["lat"]),
+                    "mode": "catalog",
+                    "brand": brand,
+                }
+            )
+            if len(out) >= limit:
+                break
+        # 按区排序，便于选择
+        out.sort(key=lambda x: (x.get("district") or "", x.get("name") or ""))
+        return out
+
     def _place_pool(self) -> list[dict[str, Any]]:
         from .competitors import OFFLINE_PLACES, load_competitors
 
         if not OFFLINE_PLACES:
             load_competitors()
         pool = list(DISTRICT_CENTERS)
+        for p in load_brand_pois():
+            pool.append(
+                {
+                    "name": p["name"],
+                    "address": p.get("address", ""),
+                    "district": p.get("district", ""),
+                    "lng": p["lng"],
+                    "lat": p["lat"],
+                }
+            )
         for p in OFFLINE_PLACES:
             pool.append(
                 {
@@ -168,13 +306,22 @@ class BaiduMapClient:
             )
         return pool
 
-    def _fuzzy_suggest(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """与使用者输入强匹配：核心名称须命中候选；禁止无关区中心灌榜。"""
-        pool = self._place_pool()
+    def _fuzzy_suggest(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
+        """与使用者输入强匹配；品牌名优先返回全市多点。"""
         q_raw = (query or "").strip()
         if not q_raw:
             return []
 
+        # 品牌库命中多点时直接返回（如「新东方」）
+        brand_hits = self._brand_poi_suggest(q_raw, limit=limit)
+        if len(brand_hits) >= 2:
+            return brand_hits
+        if len(brand_hits) == 1 and _normalize_query(q_raw) in (
+            brand_hits[0].get("brand") or brand_hits[0].get("name") or ""
+        ):
+            return brand_hits
+
+        pool = self._place_pool()
         q = _normalize_query(q_raw)
         q_district = _extract_district(q_raw)
         tokens = _query_tokens(q)
@@ -215,12 +362,18 @@ class BaiduMapClient:
         out: list[dict[str, Any]] = []
         seen: set[str] = set()
         for _, h in scored:
-            if h["name"] in seen:
+            key = f"{h['name']}|{round(h['lng'],4)}|{round(h['lat'],4)}"
+            if key in seen:
                 continue
-            seen.add(h["name"])
+            seen.add(key)
             out.append(h)
             if len(out) >= limit:
                 break
+
+        if brand_hits and not out:
+            return brand_hits
+        if brand_hits:
+            return _merge_places(brand_hits + out, limit=limit)
 
         # 库内无强匹配：仅返回一条「以用户输入为名」的近似点
         if not out:
@@ -228,6 +381,26 @@ class BaiduMapClient:
             if synth:
                 out = [synth]
         return out
+
+
+def _merge_places(items: list[dict[str, Any]], limit: int = 25) -> list[dict[str, Any]]:
+    """按坐标/名称去重，优先保留带详细地址的条目。"""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for h in items:
+        name = str(h.get("name") or "")
+        lng = float(h.get("lng") or 0)
+        lat = float(h.get("lat") or 0)
+        key = h.get("uid") or f"{name}|{round(lng, 4)}|{round(lat, 4)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(h)
+        if len(out) >= limit:
+            break
+    # 有区信息的排前面，同区按名称
+    out.sort(key=lambda x: (x.get("district") or "zzz", x.get("name") or ""))
+    return out
 
 
 def _normalize_query(q: str) -> str:

@@ -8,6 +8,10 @@ enableXsrfProtection = true
 [browser]
 gatherUsageStats = false
 
+# 侧栏默认收起；用户可点左上角展开
+[client]
+toolbarMode = "minimal"
+
 [theme]
 base = "light"
 primaryColor = "#1c1915"
