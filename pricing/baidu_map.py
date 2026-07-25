@@ -488,10 +488,10 @@ class BaiduMapClient:
             if q_district and dist and q_district != dist and q_district not in name:
                 continue
 
-            # 已选区：路名子串直接命中（解决「宜山路」对「宜山路商圈」）
+            # 已选区：核心路名须出现在名称/地址中（不用松散 token，避免误伤）
             blob = f"{name}{addr}"
-            if q_district and core and len(core) >= 2 and (core in blob or any(t in blob for t in tokens if len(t) >= 2)):
-                score = 120.0 if core in name or core in addr else 80.0
+            if q_district and core and len(core) >= 2 and core in blob:
+                score = 150.0 if core in name else 120.0
                 scored.append(
                     (
                         score,

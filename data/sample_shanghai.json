@@ -16,6 +16,7 @@
   "amenity": "成熟商圈/产业区",
   "private_bath": true,
   "search_q": "宜山路",
+  "search_district": "徐汇",
   "search_mode": "fuzzy",
   "user_weights": {
     "metro": 1.0,
