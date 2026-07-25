@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .shanghai_market import DEFAULT_USER_WEIGHTS
+
+if TYPE_CHECKING:
+    from .rent_trend import RentTrend
 
 DAYLIGHT_TYPES = ["带阳台", "明窗", "天井窗"]
 DECORATION_SIMPLE = ["精装", "简装"]
@@ -65,6 +68,7 @@ class AreaMarketReport:
     analysis_lines: list[str] = field(default_factory=list)
     sample_count: int = 0
     area_basis_note: str = ""
+    data_as_of: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -194,6 +198,7 @@ class CompetitorRef:
     community: str = ""
     area_listed: float = 0.0
     area_listed_basis: str = "套内"  # 原挂牌：套内 / 建筑
+    as_of: str = ""
 
     @property
     def display_name(self) -> str:
@@ -239,6 +244,8 @@ class PricingPrediction:
     map_points: list[GeoPoint] = field(default_factory=list)
     formula: str = ""
     notes: list[str] = field(default_factory=list)
+    data_as_of: str = ""
+    rent_trend: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -254,6 +261,8 @@ class PricingPrediction:
             "rent_mid": round(self.rent_mid),
             "rent_max": round(self.rent_max),
             "公式": self.formula,
+            "数据截至": self.data_as_of,
+            "租金走势": self.rent_trend.to_dict() if self.rent_trend else None,
             "2km片区": self.area_report.to_dict() if self.area_report else None,
             "周边均价_月租": self.surrounding_avg_rent,
             "周边均价_套内单价": self.surrounding_avg_unit_price,

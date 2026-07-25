@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import random
+from datetime import date
 from pathlib import Path
 from statistics import mean, median
 from typing import Any
@@ -108,6 +109,7 @@ def _item_to_ref(item: dict[str, Any], dist: float) -> CompetitorRef:
         community=community,
         area_listed=listed,
         area_listed_basis=listed_basis,
+        as_of=str(item.get("as_of") or ""),
     )
 
 
@@ -223,6 +225,7 @@ def _synthetic_ring_samples(
                 "price": price,
                 "source": src,
                 "segment": seg,
+                "as_of": date.today().isoformat(),
                 "_forced_dist": dist,
             }
         )
@@ -350,6 +353,11 @@ def build_area_report(comps: list[CompetitorRef], radius_m: float = RADIUS_2KM) 
                 "对本项目锚定权重更高。"
             )
 
+    as_ofs = [str(c.as_of) for c in within if getattr(c, "as_of", "")]
+    data_as_of = max(as_ofs) if as_ofs else _catalog_meta_as_of()
+    if data_as_of:
+        analysis_lines.insert(0, f"租金样本数据截至：{data_as_of}。")
+
     return AreaMarketReport(
         radius_m=radius_m,
         overall=overall,
@@ -358,7 +366,18 @@ def build_area_report(comps: list[CompetitorRef], radius_m: float = RADIUS_2KM) 
         analysis_lines=analysis_lines,
         sample_count=len(within),
         area_basis_note=basis_note,
+        data_as_of=data_as_of,
     )
+
+
+def _catalog_meta_as_of() -> str:
+    meta_path = Path(__file__).resolve().parent.parent / "data" / "competitors_meta.json"
+    if not meta_path.exists():
+        return ""
+    try:
+        return str(json.loads(meta_path.read_text(encoding="utf-8")).get("as_of") or "")
+    except Exception:
+        return ""
 
 
 def surrounding_stats(

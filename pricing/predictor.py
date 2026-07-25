@@ -24,6 +24,7 @@ from .shanghai_market import (
     metro_coefficient,
     resolve_plate_adjust,
 )
+from .rent_trend import build_rent_trend
 from .simple_models import (
     DEFAULT_USER_WEIGHTS,
     LeaseStrategy,
@@ -102,6 +103,15 @@ class RentPredictor:
                 comps,
             )
 
+        data_as_of = ""
+        if area_report and getattr(area_report, "data_as_of", ""):
+            data_as_of = area_report.data_as_of
+        else:
+            dates = [getattr(c, "as_of", "") for c in comps if getattr(c, "as_of", "")]
+            data_as_of = max(dates) if dates else ""
+
+        trend = build_rent_trend(mid, inp.district or "上海")
+
         return PricingPrediction(
             location=inp.location_label(),
             layout=inp.layout,
@@ -125,6 +135,8 @@ class RentPredictor:
             map_points=map_points,
             formula=formula,
             notes=notes,
+            data_as_of=data_as_of,
+            rent_trend=trend,
         )
 
     def _base_price(self, inp: SimplePricingInput) -> float:

@@ -336,6 +336,8 @@ def _collect_input() -> SimplePricingInput:
 
 def _render_outputs(pred: PricingPrediction, ak: str) -> None:
     st.markdown('<div class="section-label">输出结果</div>', unsafe_allow_html=True)
+    if getattr(pred, "data_as_of", ""):
+        st.caption(f"租金样本数据截至：**{pred.data_as_of}**（导入/刷新后更新）")
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("预测最低", f"¥{round(pred.rent_min):,}")
     m2.metric("预测中位", f"¥{round(pred.rent_mid):,}")
@@ -343,6 +345,26 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
     m4.metric("套内单价", f"{pred.adjusted_unit_price}", delta=f"{pred.total_premium_pct:+g}%")
     m5.metric("组合评分", f"{pred.composite_score}")
     st.caption(pred.formula)
+
+    # 时点前后 6 个月价格曲线
+    trend = getattr(pred, "rent_trend", None)
+    if trend and getattr(trend, "points", None):
+        st.markdown("#### 租金走势（查询时点 ±6 个月）")
+        st.caption(
+            f"历史：{trend.history_note} ｜ 前瞻：{trend.forecast_note}"
+        )
+        rows = trend.to_chart_rows()
+        chart_df = pd.DataFrame(rows).set_index("月份")[["建议月租"]]
+        st.line_chart(chart_df, height=280)
+        phase_df = pd.DataFrame(rows)
+        st.dataframe(
+            phase_df,
+            use_container_width=True,
+            hide_index=True,
+            height=min(420, 40 + 28 * len(phase_df)),
+        )
+        if trend.disclaimer:
+            st.caption(trend.disclaimer)
 
     # 2km 片区分析（核心新增）
     st.markdown(f"#### 附近片区租赁价格（{int(RADIUS_2KM)}m 内）")
@@ -470,6 +492,7 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
                     "面积说明": basis_label,
                     "月租": round(float(c.price)),
                     "套内单价": getattr(c, "unit_price", ""),
+                    "数据截至": getattr(c, "as_of", "") or "—",
                     "来源": getattr(c, "source", ""),
                 }
             )

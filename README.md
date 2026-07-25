@@ -7,6 +7,24 @@
 - 公式：`面积 × 板块基准单价 × Π(各因子生效系数)`，再与片区中位单价混合锚定
 - 用户可调各因子权重；默认独卫、套内面积
 
+## 竞品数据更新（保持最新）
+
+1. 按模板填写 CSV：`data/inbox/competitors_template.csv`（可另存为新文件放进 `data/inbox/`）
+2. 运行：
+
+```bash
+source .venv/bin/activate
+python scripts/refresh_competitors.py
+```
+
+3. 主库 `data/shanghai_competitors.json` 会更新，并写入 `as_of`；界面显示「数据截至」。
+
+## 租金走势曲线
+
+输出结果含查询时点 **前后各 6 个月** 建议月租曲线：
+- 历史：市/区租金指数回推（`data/shanghai_rent_index.json`）
+- 前瞻：公开预测温和修复情景月环比推演
+
 ## 百度地图 AK（推荐预设，用户不用每次填）
 
 密钥**不要**提交到 Git。任选一种写入后，侧栏会显示「已内置」：
