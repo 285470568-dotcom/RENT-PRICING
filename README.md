@@ -7,6 +7,22 @@
 - 公式：`面积 × 板块基准单价 × Π(各因子生效系数)`，再与片区中位单价混合锚定
 - 用户可调各因子权重；默认独卫、套内面积
 
+## 百度地图 AK（推荐预设，用户不用每次填）
+
+密钥**不要**提交到 Git。任选一种写入后，侧栏会显示「已内置」：
+
+1. `.streamlit/secrets.toml`（推荐）
+
+```toml
+BAIDU_MAP_AK = "你的AK"
+```
+
+2. 仓库根目录 `.baidu_ak`（单行 AK）
+3. 环境变量 `BAIDU_MAP_AK`
+4. Streamlit Cloud：App settings → Secrets 同上
+
+示例文件：`.streamlit/secrets.toml.example`
+
 ## 本地运行
 
 ```bash

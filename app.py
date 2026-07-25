@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from pricing.baidu_map import BaiduMapClient, get_ak, render_baidu_map_html
+from pricing.baidu_map import BaiduMapClient, ak_configured, get_ak, render_baidu_map_html
 from pricing.competitors import RADIUS_2KM, load_competitors
 from pricing.predictor import RentPredictor
 from pricing.shanghai_market import (
@@ -89,10 +89,15 @@ def _sidebar() -> str:
             index=0,
         )
         st.session_state.search_prefer = prefer
-        ak_input = st.text_input("百度地图 AK（可选）", value=get_ak(), type="password")
-        if ak_input:
-            st.session_state["BAIDU_MAP_AK_RUNTIME"] = ak_input
-            os.environ["BAIDU_MAP_AK"] = ak_input
+        if ak_configured():
+            st.caption("百度定位：已内置（无需填写 AK）")
+        else:
+            ak_input = st.text_input("百度地图 AK", value="", type="password", help="也可写入 .streamlit/secrets.toml 常态化预设")
+            if ak_input:
+                st.session_state["BAIDU_MAP_AK_RUNTIME"] = ak_input
+                os.environ["BAIDU_MAP_AK"] = ak_input
+            else:
+                st.caption("未配置 AK 时只能匹配本地名录")
         if st.button("填充徐汇示例", use_container_width=True):
             _apply_sample()
             st.rerun()
@@ -103,14 +108,18 @@ def _sidebar() -> str:
                 st.caption(rule.criteria)
                 for label, coef, tip in rule.levels:
                     st.write(f"· {label}：×{coef:g} — {tip}")
-    return st.session_state.get("BAIDU_MAP_AK_RUNTIME") or get_ak()
+    return get_ak()
 
 
 def _search_address(ak: str) -> None:
     st.markdown('<div class="section-label">区位检索</div>', unsafe_allow_html=True)
     st.caption(
         "请填写 **行政区 + 路名/小区/机构**（门牌号可选）。"
-        "只填模糊词容易不准；已取消「分区假地址」。配置百度 AK 后可做到门牌级定位。"
+        + (
+            "已启用百度定位。"
+            if ak_configured()
+            else "当前未内置百度 AK，定位能力有限。"
+        )
     )
     dist_opts = ["（请选择行政区）", *DISTRICT_NAMES]
     cur_dist = st.session_state.get("search_district", "")

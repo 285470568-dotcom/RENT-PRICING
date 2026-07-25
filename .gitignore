@@ -5,5 +5,7 @@ __pycache__/
 outputs/*
 !outputs/.gitkeep
 .streamlit/secrets.toml
+.baidu_ak
+.env
 bin/
 *.tgz

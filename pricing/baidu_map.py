@@ -66,10 +66,23 @@ class BaiduMapError(Exception):
 
 
 def get_ak() -> str:
+    """读取百度地图 AK（用户无需每次填写）。
+
+    优先级：运行时覆盖 → 环境变量 → Streamlit secrets → 本地 .baidu_ak 文件
+    """
+    runtime = ""
+    try:
+        import streamlit as st
+
+        runtime = str(st.session_state.get("BAIDU_MAP_AK_RUNTIME", "") or "")
+    except Exception:
+        runtime = ""
     return (
-        os.environ.get("BAIDU_MAP_AK", "")
+        runtime
+        or os.environ.get("BAIDU_MAP_AK", "")
         or os.environ.get("BAIDU_AK", "")
         or _secrets_ak()
+        or _file_ak()
     )
 
 
@@ -80,6 +93,40 @@ def _secrets_ak() -> str:
         return str(st.secrets.get("BAIDU_MAP_AK", "") or "")
     except Exception:
         return ""
+
+
+def _file_ak() -> str:
+    """仓库根目录 .baidu_ak（已 gitignore，仅本机/部署机使用）。"""
+    root = Path(__file__).resolve().parent.parent
+    for name in (".baidu_ak", ".env"):
+        p = root / name
+        if not p.exists():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+        if name == ".env":
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("BAIDU_MAP_AK=") or line.startswith("BAIDU_AK="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+            continue
+        # .baidu_ak：整文件即 key，或 BAIDU_MAP_AK=xxx
+        if "=" in text.splitlines()[0]:
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("BAIDU_MAP_AK=") or line.startswith("BAIDU_AK="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+        elif text:
+            return text.splitlines()[0].strip()
+    return ""
+
+
+def ak_configured() -> bool:
+    return bool(get_ak())
 
 
 def _extract_district(text: str) -> str:
