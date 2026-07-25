@@ -5,13 +5,28 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from pathlib import Path
-
 from .simple_models import GeoPoint
+
+
+def _ssl_context() -> ssl.SSLContext:
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
+def _http_get_json(url: str, timeout: float = 10) -> dict[str, Any]:
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 BRAND_POI_PATH = Path(__file__).resolve().parent.parent / "data" / "shanghai_brand_pois.json"
 _BRAND_POIS: list[dict[str, Any]] | None = None
@@ -267,9 +282,7 @@ class BaiduMapClient:
             }
         )
         url = f"https://api.map.baidu.com/geocoding/v3/?{params}"
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = _http_get_json(url, timeout=8)
         if data.get("status") != 0:
             return None
         result = data.get("result") or {}
@@ -308,9 +321,7 @@ class BaiduMapClient:
             }
         )
         url = f"https://api.map.baidu.com/place/v2/suggestion?{params}"
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = _http_get_json(url, timeout=8)
 
         if data.get("status") != 0:
             raise BaiduMapError(
@@ -359,9 +370,7 @@ class BaiduMapClient:
                 }
             )
             url = f"https://api.map.baidu.com/place/v2/search?{params}"
-            req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            data = _http_get_json(url, timeout=10)
             if data.get("status") != 0:
                 if page_num == 0:
                     raise BaiduMapError(
