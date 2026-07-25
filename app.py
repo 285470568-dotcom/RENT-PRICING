@@ -44,19 +44,87 @@ st.set_page_config(
 )
 
 CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600&family=Noto+Serif+SC:wght@500;600&family=Outfit:wght@300;400;500&display=swap');
-html, body, [class*="css"] { font-family: Outfit, "Noto Serif SC", serif !important; color:#1a1814; }
-.stApp { background: linear-gradient(180deg,#f7f4ee 0%,#f3efe6 100%); }
-h1,h2,h3,.hero-title { font-family: "Cormorant Garamond","Noto Serif SC",serif !important; font-weight:600 !important; color:#141210 !important; }
-.hero { padding:0.2rem 0 1rem; border-bottom:1px solid rgba(40,32,22,.12); margin-bottom:1rem; }
-.hero-kicker { font-size:.72rem; letter-spacing:.22em; text-transform:uppercase; color:#6e6456; }
-.hero-title { font-size:2.2rem !important; margin:0 !important; }
-.hero-sub { margin-top:.4rem; color:#5c554a; font-size:.92rem; max-width:46rem; }
-.section-label { font-size:.68rem; letter-spacing:.18em; text-transform:uppercase; color:#7a7062; margin:.5rem 0 .55rem; }
-div[data-testid="stSidebar"] { background:#161411; }
-div[data-testid="stSidebar"] * { color:#efe8dc !important; }
-.stButton > button { border-radius:0 !important; background:#1c1915 !important; color:#f4efe6 !important; border:1px solid #1c1915 !important; letter-spacing:.06em; }
-[data-testid="stMetricValue"] { font-family:"Cormorant Garamond","Noto Serif SC",serif !important; }
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;300;400;500&display=swap');
+:root {
+  --ink: #2a2620;
+  --muted: #7a7268;
+  --line: rgba(42,38,32,.12);
+  --paper: #f8f5ef;
+  --paper2: #f3efe6;
+  --accent: #3d3429;
+  --song: "Songti SC", "STSong", "Noto Serif SC", "SimSun", serif;
+}
+html, body, [class*="css"], .stApp, .stMarkdown, .stText, label, p, span, div {
+  font-family: var(--song) !important;
+  font-weight: 300 !important;
+  color: var(--ink);
+  letter-spacing: .02em;
+}
+.stApp { background: linear-gradient(180deg, var(--paper) 0%, var(--paper2) 100%); }
+h1,h2,h3,h4,.hero-title,.out-h {
+  font-family: var(--song) !important;
+  font-weight: 400 !important;
+  color: var(--accent) !important;
+  letter-spacing: .08em !important;
+}
+.hero { padding: .35rem 0 1.1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.1rem; }
+.hero-kicker { font-size: .7rem; letter-spacing: .28em; color: var(--muted); font-weight: 300 !important; }
+.hero-title { font-size: 2.05rem !important; margin: .25rem 0 0 !important; font-weight: 400 !important; }
+.hero-sub { margin-top: .45rem; color: var(--muted); font-size: .92rem; max-width: 42rem; font-weight: 300 !important; line-height: 1.7; }
+.section-label {
+  font-size: .68rem; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--muted); margin: .85rem 0 .65rem; font-weight: 300 !important;
+}
+.out-wrap { margin-top: .2rem; }
+.out-meta { color: var(--muted); font-size: .84rem; margin: 0 0 .9rem; font-weight: 300 !important; }
+.metric-row {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  margin: 0 0 1.1rem;
+}
+.metric-cell { padding: .85rem 1rem .9rem; border-right: 1px solid var(--line); }
+.metric-cell:last-child { border-right: none; }
+.metric-label { font-size: .72rem; color: var(--muted); letter-spacing: .14em; margin-bottom: .35rem; }
+.metric-value { font-size: 1.55rem; font-weight: 400 !important; line-height: 1.2; letter-spacing: .04em; }
+.metric-delta { font-size: .78rem; color: var(--muted); margin-top: .25rem; }
+.out-formula { color: var(--muted); font-size: .82rem; line-height: 1.65; margin: 0 0 1.35rem; }
+.out-h {
+  font-size: 1.05rem !important; margin: 1.35rem 0 .55rem !important;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+}
+.out-note { color: var(--muted); font-size: .82rem; line-height: 1.65; margin: 0 0 .75rem; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; margin: .4rem 0 1rem; }
+.stat-block { padding: .15rem 0; }
+.stat-title { font-size: .78rem; letter-spacing: .12em; color: var(--muted); margin-bottom: .35rem; }
+.stat-body { font-size: .92rem; line-height: 1.7; font-weight: 300 !important; }
+.analysis-list { margin: .2rem 0 1rem; padding: 0; list-style: none; }
+.analysis-list li {
+  position: relative; padding: .35rem 0 .35rem 1rem; color: var(--ink);
+  font-size: .9rem; line-height: 1.7; border-bottom: 1px solid rgba(42,38,32,.06);
+}
+.analysis-list li::before { content: "·"; position: absolute; left: 0; color: var(--muted); }
+.kv { width: 100%; border-collapse: collapse; margin: .2rem 0 .8rem; }
+.kv th, .kv td {
+  text-align: left; vertical-align: top; padding: .55rem 0;
+  border-bottom: 1px solid rgba(42,38,32,.08); font-weight: 300 !important;
+  font-size: .9rem; line-height: 1.65;
+}
+.kv th { width: 5.5rem; color: var(--muted); letter-spacing: .08em; font-weight: 300 !important; }
+.strategy-ol { margin: .2rem 0 .8rem; padding-left: 1.1rem; }
+.strategy-ol li { margin: .35rem 0; line-height: 1.7; font-size: .92rem; }
+div[data-testid="stSidebar"] { background: #1a1713; }
+div[data-testid="stSidebar"] * { color: #efe8dc !important; font-family: var(--song) !important; font-weight: 300 !important; }
+.stButton > button {
+  border-radius: 0 !important; background: #1c1915 !important; color: #f4efe6 !important;
+  border: 1px solid #1c1915 !important; letter-spacing: .12em; font-family: var(--song) !important; font-weight: 300 !important;
+}
+[data-testid="stMetricValue"], [data-testid="stDataFrame"] {
+  font-family: var(--song) !important; font-weight: 300 !important;
+}
+@media (max-width: 900px) {
+  .metric-row, .stat-grid { grid-template-columns: 1fr 1fr; }
+  .metric-cell { border-bottom: 1px solid var(--line); }
+}
 """
 
 
@@ -337,17 +405,25 @@ def _collect_input() -> SimplePricingInput:
 
 def _render_outputs(pred: PricingPrediction, ak: str) -> None:
     st.markdown('<div class="section-label">输出结果</div>', unsafe_allow_html=True)
-    if getattr(pred, "data_as_of", ""):
-        st.caption(f"租金样本数据截至：**{pred.data_as_of}**（导入/刷新后更新）")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("预测最低", f"¥{round(pred.rent_min):,}")
-    m2.metric("预测中位", f"¥{round(pred.rent_mid):,}")
-    m3.metric("预测最高", f"¥{round(pred.rent_max):,}")
-    m4.metric("套内单价", f"{pred.adjusted_unit_price}", delta=f"{pred.total_premium_pct:+g}%")
-    m5.metric("组合评分", f"{pred.composite_score}")
-    st.caption(pred.formula)
+    as_of = getattr(pred, "data_as_of", "") or ""
+    meta = f"租金样本截至 {as_of}" if as_of else "租金样本时点未标注"
+    st.markdown(f'<p class="out-meta">{meta} · 口径：套内面积</p>', unsafe_allow_html=True)
 
-    # 时点前后 6 个月价格曲线（旧缓存无 trend 时现场补算）
+    delta = f"{pred.total_premium_pct:+g}% 相对基准"
+    st.markdown(
+        f"""
+<div class="metric-row">
+  <div class="metric-cell"><div class="metric-label">预测最低</div><div class="metric-value">¥{round(pred.rent_min):,}</div></div>
+  <div class="metric-cell"><div class="metric-label">预测中位</div><div class="metric-value">¥{round(pred.rent_mid):,}</div></div>
+  <div class="metric-cell"><div class="metric-label">预测最高</div><div class="metric-value">¥{round(pred.rent_max):,}</div></div>
+  <div class="metric-cell"><div class="metric-label">套内单价</div><div class="metric-value">{pred.adjusted_unit_price:g}</div><div class="metric-delta">{delta}</div></div>
+  <div class="metric-cell"><div class="metric-label">组合评分</div><div class="metric-value">{pred.composite_score:g}</div></div>
+</div>
+<p class="out-formula">{pred.formula}</p>
+""",
+        unsafe_allow_html=True,
+    )
+
     trend = getattr(pred, "rent_trend", None)
     if not trend or not getattr(trend, "points", None):
         dist = (
@@ -357,74 +433,80 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
         )
         trend = build_rent_trend(float(getattr(pred, "rent_mid", 0) or 0), dist)
     if trend and getattr(trend, "points", None):
-        st.markdown("#### 租金走势（查询时点 ±6 个月）")
-        st.caption(f"历史：{trend.history_note} ｜ 前瞻：{trend.forecast_note}")
+        st.markdown('<div class="out-h">租金走势 · 查询时点 ±6 个月</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<p class="out-note">历史：{trend.history_note}<br/>前瞻：{trend.forecast_note}</p>',
+            unsafe_allow_html=True,
+        )
         rows = trend.to_chart_rows()
         chart_df = pd.DataFrame(
             {"建议月租(元)": [r["建议月租"] for r in rows]},
             index=[r["月份"] for r in rows],
         )
         st.line_chart(chart_df)
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        with st.expander("查看分月明细", expanded=False):
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         if trend.disclaimer:
-            st.caption(trend.disclaimer)
+            st.markdown(f'<p class="out-note">{trend.disclaimer}</p>', unsafe_allow_html=True)
     else:
         st.warning("租金走势暂不可用，请重新点击「生成研判」。")
 
-    # 2km 片区分析（核心新增）
-    st.markdown(f"#### 附近片区租赁价格（{int(RADIUS_2KM)}m 内）")
-    st.caption(
-        "面积口径：本项目输入为【套内面积】；下列均价/单价均已统一到【套内㎡】。"
-        "若竞品原挂牌为建筑面积，已按 ×0.78 折算套内后再参与对比。"
+    st.markdown(
+        f'<div class="out-h">附近片区租赁价格 · {int(RADIUS_2KM)}m 内</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="out-note">均价/单价已统一为套内㎡；原建筑面积挂牌已按 ×0.78 折算。</p>',
+        unsafe_allow_html=True,
     )
     rep = pred.area_report
     if rep and rep.sample_count:
-        note = getattr(rep, "area_basis_note", "") or ""
-        if note:
-            st.info(note)
-        c1, c2, c3 = st.columns(3)
         o, a, r = rep.overall, rep.apartment, rep.residential
-        with c1:
-            st.markdown("**综合（套内口径）**")
-            st.write(
-                f"样本 {o.get('count',0)}｜中位 ¥{o.get('median_rent','—')}｜"
-                f"均价 ¥{o.get('avg_rent','—')}｜套内单价 {o.get('avg_unit','—')} 元/㎡"
+
+        def _stat_html(title: str, d: dict) -> str:
+            if not d.get("count"):
+                return (
+                    f'<div class="stat-block"><div class="stat-title">{title}</div>'
+                    f'<div class="stat-body">暂无样本</div></div>'
+                )
+            return (
+                f'<div class="stat-block"><div class="stat-title">{title}</div>'
+                f'<div class="stat-body">样本 {d.get("count")}　中位 ¥{d.get("median_rent","—")}<br/>'
+                f'均价 ¥{d.get("avg_rent","—")}　套内单价 {d.get("avg_unit","—")} 元/㎡<br/>'
+                f'<span style="color:#7a7268">区间 ¥{d.get("min_rent","—")}–{d.get("max_rent","—")}</span>'
+                f"</div></div>"
             )
-            st.caption(f"区间 ¥{o.get('min_rent','—')}–{o.get('max_rent','—')}")
-        with c2:
-            st.markdown("**集中式公寓（套内口径）**")
-            if a.get("count"):
-                st.write(
-                    f"样本 {a['count']}｜中位 ¥{a['median_rent']}｜均价 ¥{a['avg_rent']}｜"
-                    f"套内单价 {a.get('avg_unit')} 元/㎡"
-                )
-                st.caption(f"区间 ¥{a['min_rent']}–{a['max_rent']}")
-            else:
-                st.write("暂无公寓样本")
-        with c3:
-            st.markdown("**分散式民居（套内口径）**")
-            if r.get("count"):
-                st.write(
-                    f"样本 {r['count']}｜中位 ¥{r['median_rent']}｜均价 ¥{r['avg_rent']}｜"
-                    f"套内单价 {r.get('avg_unit')} 元/㎡"
-                )
-                st.caption(f"区间 ¥{r['min_rent']}–{r['max_rent']}｜民居多为建筑面积已折算")
-            else:
-                st.write("暂无民居样本")
-        for line in rep.analysis_lines:
-            st.markdown(f"- {line}")
+
+        st.markdown(
+            '<div class="stat-grid">'
+            + _stat_html("综合", o)
+            + _stat_html("集中式公寓", a)
+            + _stat_html("分散式民居", r)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+        lines = "".join(f"<li>{line}</li>" for line in (rep.analysis_lines or []))
+        if lines:
+            st.markdown(f'<ul class="analysis-list">{lines}</ul>', unsafe_allow_html=True)
     else:
         st.warning("2km 内暂无样本，请确认定位。")
 
-    left, right = st.columns([1.05, 0.95])
+    left, right = st.columns([1.08, 0.92], gap="large")
     with left:
-        st.markdown("#### 客户画像")
+        st.markdown('<div class="out-h">客户画像</div>', unsafe_allow_html=True)
         p = pred.persona
         st.markdown(
-            f"| | |\n|--|--|\n| 主力客群 | {p.primary} |\n| 职业 | {p.occupation} |\n"
-            f"| 支付能力 | {p.affordability} |\n| 诉求 | {'；'.join(p.needs)} |"
+            f"""
+<table class="kv">
+  <tr><th>主力客群</th><td>{p.primary}</td></tr>
+  <tr><th>职业</th><td>{p.occupation}</td></tr>
+  <tr><th>支付能力</th><td>{p.affordability}</td></tr>
+  <tr><th>诉求</th><td>{'；'.join(p.needs)}</td></tr>
+</table>
+""",
+            unsafe_allow_html=True,
         )
-        st.markdown("#### 六大溢价因子（乘法）")
+        st.markdown('<div class="out-h">六大溢价因子</div>', unsafe_allow_html=True)
         st.dataframe(
             pd.DataFrame(
                 [
@@ -443,15 +525,23 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
             use_container_width=True,
             hide_index=True,
         )
-        st.markdown("#### 租赁策略")
+        st.markdown('<div class="out-h">租赁策略</div>', unsafe_allow_html=True)
         s = pred.strategy
         st.markdown(
-            f"1. **租期**：{s.lease_term}\n2. **付款**：{s.payment}\n"
-            f"3. **定价**：{s.pricing}\n4. **差异化**：{s.differentiation}"
+            f"""
+<ol class="strategy-ol">
+  <li>租期 — {s.lease_term}</li>
+  <li>付款 — {s.payment}</li>
+  <li>定价 — {s.pricing}</li>
+  <li>差异化 — {s.differentiation}</li>
+</ol>
+""",
+            unsafe_allow_html=True,
         )
 
     with right:
-        st.markdown("#### 电子地图（目标+2km竞品）")
+        st.markdown('<div class="out-h">电子地图</div>', unsafe_allow_html=True)
+        st.markdown('<p class="out-note">目标点与 2km 内竞品</p>', unsafe_allow_html=True)
         if pred.map_points:
             html = render_baidu_map_html(
                 pred.map_points[0], pred.map_points[1:], ak=ak or None, height=380
@@ -460,17 +550,20 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
         else:
             st.info("锁定地址并生成后显示地图")
 
-    # 竞品明细单独全宽，避免挤在右栏看不到
-    st.markdown("#### 2km 竞品明细（公寓+民居）")
-    st.caption(
-        "「原挂牌口径」标明建筑/套内；请用「套内㎡(对比用)」与输入套内面积对照。"
+    st.markdown('<div class="out-h">2km 竞品明细</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="out-note">对照「套内㎡(对比用)」与输入套内面积；「原挂牌口径」区分建筑/套内。</p>',
+        unsafe_allow_html=True,
     )
     comps = list(getattr(pred, "competitors", None) or [])
     near = [c for c in comps if float(getattr(c, "distance_m", 1e9) or 1e9) <= RADIUS_2KM]
-    st.write(f"共 **{len(near)}** 条（2km 内） / 原始返回 {len(comps)} 条")
+    st.markdown(
+        f'<p class="out-meta">共 {len(near)} 条（2km 内） / 原始返回 {len(comps)} 条</p>',
+        unsafe_allow_html=True,
+    )
     if near:
         rows = []
-        for c in sorted(near, key=lambda x: float(getattr(x, "distance_m", 0) or 0)):
+        for c in sorted(near, key=lambda x: float(getattr(c, "distance_m", 0) or 0)):
             listed_basis = getattr(c, "area_listed_basis", None) or (
                 "建筑" if "建筑" in str(getattr(c, "area_basis", "")) else "套内"
             )
@@ -518,6 +611,7 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
         file_name="上海公寓租金研判.json",
         mime="application/json",
     )
+
 
 
 def main() -> None:
