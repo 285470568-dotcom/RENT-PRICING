@@ -111,8 +111,8 @@ def _search_address(ak: str) -> None:
         "地址关键词",
         value=st.session_state.get("search_q", "宜山路"),
         key="search_q",
-        placeholder="例如：新东方、宜山路、北新泾",
-        help="输入机构名/路名后点检索，将在「选择区位」中列出上海匹配地址",
+        placeholder="任意关键词：路名/小区/机构/商圈",
+        help="输入后点检索，将在「选择区位」列出上海匹配的多处地址供选择",
     )
     c1, c2 = st.columns(2)
     with c1:
@@ -174,13 +174,15 @@ def _search_address(ak: str) -> None:
                 tag = "百度"
             elif mode == "catalog":
                 tag = "名录"
+            elif mode == "district" or s.get("approx"):
+                tag = "分区候选"
             elif s.get("synthetic"):
                 tag = "按输入定位"
             else:
                 tag = "模糊"
             addr = s.get("address") or ""
             labels.append(f"[{dist}] {s['name']} ｜ {addr}  ·{tag}")
-        st.caption(f"共 {len(labels)} 条可选（含全市同名机构多点）")
+        st.caption(f"共 {len(labels)} 条上海地址可选，请选择后确认")
         choice = st.selectbox("选择区位", labels, key="geo_choice")
         chosen = suggests[labels.index(choice)]
         if st.button("确认使用该地址", type="primary", use_container_width=True):

@@ -95,49 +95,68 @@ class BaiduMapClient:
         self.ak = (ak if ak is not None else get_ak()) or ""
 
     def suggest(
-        self, query: str, city: str = "上海", limit: int = 25
+        self, query: str, city: str = "上海", limit: int = 30
     ) -> tuple[list[dict[str, Any]], str]:
-        """返回 (结果列表, 模式说明)。模式：baidu / fuzzy / baidu+fuzzy。
+        """任意关键词 → 上海多点候选列表。
 
-        品牌/机构名（如「新东方」）会尽量列出上海多处门店/校区供选择。
+        优先级：百度 Place Search（全市+分区补全）→ 本地 POI 库 → 模糊/分区候选。
         """
         q = (query or "").strip()
         if not q:
             return [], "fuzzy"
 
-        baidu_hits: list[dict[str, Any]] = []
-        mode = "fuzzy"
+        buckets: list[dict[str, Any]] = []
+        modes: list[str] = []
+
         if self.ak:
             try:
-                # Place Search 更适合「同名多点」；suggestion 作补充
                 place_hits = self._baidu_place_search(q, city=city, limit=limit)
+                # 结果偏少时按区分区再搜，尽量铺开全市多点
+                if len(place_hits) < max(8, limit // 3):
+                    place_hits = _merge_places(
+                        place_hits + self._baidu_place_search_by_districts(q, limit=limit),
+                        limit=limit * 2,
+                    )
                 sug_hits = self._baidu_suggest(q, city=city, limit=limit)
-                baidu_hits = _merge_places(place_hits + sug_hits, limit=limit)
-                for item in baidu_hits:
+                for item in place_hits + sug_hits:
                     item["mode"] = "baidu"
-                mode = "baidu"
+                buckets.extend(place_hits + sug_hits)
+                if place_hits or sug_hits:
+                    modes.append("baidu")
             except Exception:
-                baidu_hits = []
-                mode = "fuzzy"
+                pass
 
-        brand_hits = self._brand_poi_suggest(q, limit=limit)
-        for item in brand_hits:
+        local_hits = self._local_poi_suggest(q, limit=limit)
+        for item in local_hits:
             item.setdefault("mode", "catalog")
+        if local_hits:
+            buckets.extend(local_hits)
+            modes.append("catalog")
 
-        if baidu_hits:
-            merged = _merge_places(baidu_hits + brand_hits, limit=limit)
-            # 品牌库补全后仍可能混入 catalog
-            return merged, ("baidu+catalog" if brand_hits else mode)
-
-        fuzzy = self._fuzzy_suggest(q, limit=limit)
-        for item in fuzzy:
+        fuzzy_hits = self._fuzzy_suggest(q, limit=limit, skip_local=True)
+        for item in fuzzy_hits:
             item["mode"] = item.get("mode") or "fuzzy"
-        if fuzzy:
-            return fuzzy[:limit], ("catalog" if all(i.get("mode") == "catalog" for i in fuzzy) else "fuzzy")
-        return [], "fuzzy"
+        if fuzzy_hits:
+            buckets.extend(fuzzy_hits)
+            modes.append("fuzzy")
+
+        merged = _merge_places(buckets, limit=limit)
+
+        # 仍不足：对任意关键词给出「分区 + 关键词」多点，便于选择区位
+        if len(merged) < 2:
+            district_hits = self._district_keyword_candidates(q, limit=limit)
+            merged = _merge_places(merged + district_hits, limit=limit)
+            if district_hits:
+                modes.append("district")
+
+        if not merged:
+            return [], "fuzzy"
+
+        mode = "+".join(dict.fromkeys(modes)) if modes else "fuzzy"
+        return merged, mode
 
     def _baidu_suggest(
-        self, query: str, city: str = "上海", limit: int = 25
+        self, query: str, city: str = "上海", limit: int = 30
     ) -> list[dict[str, Any]]:
         params = urlencode(
             {
@@ -165,11 +184,6 @@ class BaiduMapClient:
                 continue
             addr = item.get("address") or ""
             name = item.get("name") or ""
-            # 仅保留上海结果
-            blob = f"{addr}{name}{item.get('city') or ''}"
-            if "上海" not in blob and city == "上海":
-                # suggestion 在 city_limit 下一般已限城；无 city 字段时仍收
-                pass
             results.append(
                 {
                     "name": name,
@@ -185,9 +199,9 @@ class BaiduMapClient:
         return results
 
     def _baidu_place_search(
-        self, query: str, city: str = "上海", limit: int = 25
+        self, query: str, city: str = "上海", limit: int = 30
     ) -> list[dict[str, Any]]:
-        """百度 Place Search：同名品牌在全市的多门店结果。"""
+        """百度 Place Search：任意关键词在指定区域内的多点结果。"""
         results: list[dict[str, Any]] = []
         page_size = min(20, max(10, limit))
         pages = max(1, (limit + page_size - 1) // page_size)
@@ -241,13 +255,46 @@ class BaiduMapClient:
                 break
         return results
 
-    def _brand_poi_suggest(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
-        """本地品牌/机构 POI 库：保证「新东方」等能列出上海多点。"""
+    def _baidu_place_search_by_districts(
+        self, query: str, limit: int = 30
+    ) -> list[dict[str, Any]]:
+        """对任意关键词按上海各行政区补搜，拉齐全市多点。"""
+        from .shanghai_market import DISTRICT_NAMES
+
+        q = (query or "").strip()
+        if len(q) < 2 or not self.ak:
+            return []
+        q_district = _extract_district(q)
+        # 用户已指定区：只搜该区
+        districts = [q_district] if q_district else list(DISTRICT_NAMES)
+        per = max(3, limit // max(1, len(districts)))
+        out: list[dict[str, Any]] = []
+        for d in districts:
+            region = "浦东新区" if d == "浦东" else f"{d}区"
+            try:
+                # 关键词里去掉区名前缀，避免「徐汇新东方」在静安区搜空
+                _, rest = _split_district_prefix(_normalize_query(q))
+                q_use = rest.strip() or q
+                hits = self._baidu_place_search(q_use, city=region, limit=per)
+            except Exception:
+                continue
+            for h in hits:
+                if not h.get("district"):
+                    h["district"] = d
+                out.append(h)
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
+    def _local_poi_suggest(self, query: str, limit: int = 30) -> list[dict[str, Any]]:
+        """本地上海 POI 库：任意关键词子串命中即返回（含品牌多点）。"""
         q_raw = (query or "").strip()
         if len(q_raw) < 2:
             return []
         q = _normalize_query(q_raw)
         q_district = _extract_district(q_raw)
+        _, place_part = _split_district_prefix(q)
+        keys = [k for k in (q_raw, q, place_part) if k and len(k) >= 2]
         out: list[dict[str, Any]] = []
         for p in load_brand_pois():
             name = str(p.get("name") or "")
@@ -255,10 +302,9 @@ class BaiduMapClient:
             brand = str(p.get("brand") or "")
             district = str(p.get("district") or _extract_district(f"{name}{addr}"))
             blob = f"{name}{addr}{brand}"
-            if q not in blob and q_raw not in blob:
+            if not any(k in blob for k in keys):
                 continue
             if q_district and district and q_district != district:
-                # 指定了区则只保留该区
                 if q_district not in name and q_district not in addr:
                     continue
             out.append(
@@ -274,8 +320,62 @@ class BaiduMapClient:
             )
             if len(out) >= limit:
                 break
-        # 按区排序，便于选择
         out.sort(key=lambda x: (x.get("district") or "", x.get("name") or ""))
+        return out
+
+    # 兼容旧调用名
+    def _brand_poi_suggest(self, query: str, limit: int = 30) -> list[dict[str, Any]]:
+        return self._local_poi_suggest(query, limit=limit)
+
+    def _district_keyword_candidates(
+        self, query: str, limit: int = 30
+    ) -> list[dict[str, Any]]:
+        """任意关键词无精匹配时：按上海各区生成可选区位（坐标落在区中心附近）。"""
+        from .shanghai_market import DISTRICT_NAMES
+
+        q_raw = (query or "").strip()
+        if len(q_raw) < 2:
+            return []
+        q = _normalize_query(q_raw)
+        q_district = _extract_district(q_raw)
+        _, place_part = _split_district_prefix(q)
+        label = (place_part or q).strip() or q_raw
+        # 已是明确单点路名且带区：不必铺全区
+        if q_district and len(label) >= 2:
+            districts = [q_district]
+        else:
+            districts = list(DISTRICT_NAMES)
+
+        centers_by_dist: dict[str, dict[str, Any]] = {}
+        for p in DISTRICT_CENTERS:
+            d = p.get("district") or ""
+            if not d:
+                continue
+            if d not in centers_by_dist:
+                centers_by_dist[d] = p
+            if "中心" in str(p.get("name") or ""):
+                centers_by_dist[d] = p
+
+        out: list[dict[str, Any]] = []
+        for d in districts:
+            base = centers_by_dist.get(d)
+            if not base:
+                continue
+            name = f"{label}（{d}）"
+            addr = f"上海市{d}区{label}" if d != "浦东" else f"上海市浦东新区{label}"
+            out.append(
+                {
+                    "name": name,
+                    "address": addr,
+                    "district": d,
+                    "lng": float(base["lng"]),
+                    "lat": float(base["lat"]),
+                    "mode": "district",
+                    "approx": True,
+                }
+            )
+            if len(out) >= limit:
+                break
         return out
 
     def _place_pool(self) -> list[dict[str, Any]]:
@@ -306,20 +406,19 @@ class BaiduMapClient:
             )
         return pool
 
-    def _fuzzy_suggest(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
-        """与使用者输入强匹配；品牌名优先返回全市多点。"""
+    def _fuzzy_suggest(
+        self, query: str, limit: int = 30, skip_local: bool = False
+    ) -> list[dict[str, Any]]:
+        """本地库/地标模糊匹配；任意关键词尽量返回多点。"""
         q_raw = (query or "").strip()
         if not q_raw:
             return []
 
-        # 品牌库命中多点时直接返回（如「新东方」）
-        brand_hits = self._brand_poi_suggest(q_raw, limit=limit)
-        if len(brand_hits) >= 2:
-            return brand_hits
-        if len(brand_hits) == 1 and _normalize_query(q_raw) in (
-            brand_hits[0].get("brand") or brand_hits[0].get("name") or ""
-        ):
-            return brand_hits
+        local_hits: list[dict[str, Any]] = []
+        if not skip_local:
+            local_hits = self._local_poi_suggest(q_raw, limit=limit)
+            if len(local_hits) >= 2:
+                return local_hits
 
         pool = self._place_pool()
         q = _normalize_query(q_raw)
@@ -370,12 +469,12 @@ class BaiduMapClient:
             if len(out) >= limit:
                 break
 
-        if brand_hits and not out:
-            return brand_hits
-        if brand_hits:
-            return _merge_places(brand_hits + out, limit=limit)
+        if local_hits:
+            out = _merge_places(local_hits + out, limit=limit)
 
-        # 库内无强匹配：仅返回一条「以用户输入为名」的近似点
+        if len(out) < 2:
+            out = _merge_places(out + self._district_keyword_candidates(q_raw, limit=limit), limit=limit)
+
         if not out:
             synth = _synthetic_place(q_raw, q, q_district)
             if synth:
@@ -383,8 +482,8 @@ class BaiduMapClient:
         return out
 
 
-def _merge_places(items: list[dict[str, Any]], limit: int = 25) -> list[dict[str, Any]]:
-    """按坐标/名称去重，优先保留带详细地址的条目。"""
+def _merge_places(items: list[dict[str, Any]], limit: int = 30) -> list[dict[str, Any]]:
+    """按坐标/名称去重。"""
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for h in items:
@@ -398,7 +497,6 @@ def _merge_places(items: list[dict[str, Any]], limit: int = 25) -> list[dict[str
         out.append(h)
         if len(out) >= limit:
             break
-    # 有区信息的排前面，同区按名称
     out.sort(key=lambda x: (x.get("district") or "zzz", x.get("name") or ""))
     return out
 
