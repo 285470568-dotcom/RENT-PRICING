@@ -15,6 +15,7 @@ from pricing.competitors import RADIUS_2KM, load_competitors
 from pricing.predictor import RentPredictor
 from pricing.shanghai_market import (
     AMENITY_OPTIONS,
+    DISTRICT_NAMES,
     FLOOR_OPTIONS,
     METRO_OPTIONS,
     ORIENT_OPTIONS,
@@ -107,82 +108,104 @@ def _sidebar() -> str:
 
 def _search_address(ak: str) -> None:
     st.markdown('<div class="section-label">区位检索</div>', unsafe_allow_html=True)
-    q = st.text_input(
-        "地址关键词",
-        value=st.session_state.get("search_q", "宜山路"),
-        key="search_q",
-        placeholder="任意关键词：路名/小区/机构/商圈",
-        help="输入后点检索，将在「选择区位」列出上海匹配的多处地址供选择",
+    st.caption(
+        "请填写 **行政区 + 路名/小区/机构**（门牌号可选）。"
+        "只填模糊词容易不准；已取消「分区假地址」。配置百度 AK 后可做到门牌级定位。"
     )
+    dist_opts = ["（请选择行政区）", *DISTRICT_NAMES]
+    cur_dist = st.session_state.get("search_district", "")
+    dist_index = dist_opts.index(cur_dist) if cur_dist in dist_opts else 0
+    c_dist, c_road, c_no = st.columns([1.1, 1.6, 0.9])
+    with c_dist:
+        search_district = st.selectbox("行政区（必选）", dist_opts, index=dist_index, key="search_district_ui")
+    with c_road:
+        q = st.text_input(
+            "路名 / 小区 / 机构（必填）",
+            value=st.session_state.get("search_q", ""),
+            key="search_q",
+            placeholder="如：宜山路、漕溪北路、某某小区",
+        )
+    with c_no:
+        number = st.text_input(
+            "门牌号（可选）",
+            value=st.session_state.get("search_number", ""),
+            key="search_number",
+            placeholder="如：455号",
+        )
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("检索地址", use_container_width=True):
-            # 仅在主动检索时解除旧锁定
             st.session_state.geo_confirmed = False
-            prefer = st.session_state.get("search_prefer", "")
-            client = BaiduMapClient(ak=ak if "模糊" not in prefer or "自动" in prefer else "")
-            limit = 30
-            if prefer.startswith("仅模糊"):
-                hits = client._fuzzy_suggest(q, limit=limit)
-                for h in hits:
-                    h["mode"] = h.get("mode") or "fuzzy"
-                mode = "fuzzy"
-            elif prefer.startswith("仅百度"):
-                if not ak:
-                    hits, mode = client.suggest(q, limit=limit)
-                    st.warning("无 AK，已用本地/模糊匹配")
-                else:
-                    try:
-                        place = client._baidu_place_search(q, limit=limit)
-                        sug = client._baidu_suggest(q, limit=limit)
-                        from pricing.baidu_map import _merge_places
+            district = "" if search_district.startswith("（") else search_district
+            st.session_state.search_district = district
+            if not district:
+                st.error("请先选择行政区")
+                st.session_state.suggests = []
+            elif not (q or "").strip() and not (number or "").strip():
+                st.error("请填写路名/小区/机构，或门牌号")
+                st.session_state.suggests = []
+            else:
+                prefer = st.session_state.get("search_prefer", "")
+                use_ak = ak if (not prefer.startswith("仅模糊")) else ""
+                if prefer.startswith("仅百度") and not ak:
+                    st.warning("无百度 AK，无法做精准检索；请在侧栏填写 AK，或改用自动/模糊")
+                client = BaiduMapClient(ak=use_ak)
+                limit = 20
+                hits, mode = client.suggest(
+                    (q or "").strip(),
+                    limit=limit,
+                    district=district,
+                    number=(number or "").strip(),
+                    allow_approx=False,
+                )
+                # 仅模糊：只用本地强匹配
+                if prefer.startswith("仅模糊"):
+                    hits = client._fuzzy_suggest(
+                        f"{(q or '').strip()}{(number or '').strip()}".strip(),
+                        limit=limit,
+                        district=district,
+                    )
+                    for h in hits:
+                        h["mode"] = h.get("mode") or "fuzzy"
+                    mode = "fuzzy"
 
-                        hits = _merge_places(place + sug, limit=limit)
-                        for h in hits:
-                            h["mode"] = "baidu"
-                        mode = "baidu"
-                        if not hits:
-                            hits, mode = client.suggest(q, limit=limit)
-                            st.info("百度无结果，已本地补全")
-                    except Exception as exc:
-                        hits = client._fuzzy_suggest(q, limit=limit)
-                        for h in hits:
-                            h["mode"] = h.get("mode") or "fuzzy"
-                        mode = "fuzzy"
-                        st.warning(f"百度失败，已本地/模糊：{exc}")
-            else:
-                hits, mode = client.suggest(q, limit=limit)
-            st.session_state.suggests = hits
-            st.session_state.search_mode = mode
-            if hits:
-                st.success(f"找到 {len(hits)} 处上海地址，请在下方选择")
-            else:
-                st.error("无结果")
+                st.session_state.suggests = hits
+                st.session_state.search_mode = mode
+                if hits:
+                    st.success(f"找到 {len(hits)} 处相关地址（已过滤无关/假地址）")
+                else:
+                    tip = "请检查区+路名，或补充门牌号"
+                    if not ak:
+                        tip += "；侧栏配置百度地图 AK 可显著提高精度"
+                    st.error(f"无可靠结果。{tip}")
     with c2:
         if st.session_state.geo_confirmed:
             st.success("已锁定 · 将分析该点 2km 片区")
         else:
             st.caption(f"模式：{st.session_state.get('search_mode') or '—'}，请确认地址")
 
-    suggests = st.session_state.suggests or []
+    suggests = [
+        s
+        for s in (st.session_state.suggests or [])
+        if not s.get("approx") and s.get("mode") != "district"
+    ]
     if suggests:
         labels = []
         for s in suggests:
             dist = s.get("district") or "上海"
             mode = s.get("mode") or ""
-            if mode == "baidu":
-                tag = "百度"
-            elif mode == "catalog":
-                tag = "名录"
-            elif mode == "district" or s.get("approx"):
-                tag = "分区候选"
-            elif s.get("synthetic"):
-                tag = "按输入定位"
-            else:
-                tag = "模糊"
+            tag = {
+                "geocode": "地理编码",
+                "baidu": "百度",
+                "catalog": "名录",
+                "fuzzy": "本地匹配",
+            }.get(mode, mode or "匹配")
+            conf = s.get("confidence")
+            conf_s = f" ·置信{conf:g}" if isinstance(conf, (int, float)) and conf else ""
             addr = s.get("address") or ""
-            labels.append(f"[{dist}] {s['name']} ｜ {addr}  ·{tag}")
-        st.caption(f"共 {len(labels)} 条上海地址可选，请选择后确认")
+            labels.append(f"[{dist}] {s['name']} ｜ {addr}  ·{tag}{conf_s}")
+        st.caption(f"共 {len(labels)} 条可选（仅展示强相关结果）")
         choice = st.selectbox("选择区位", labels, key="geo_choice")
         chosen = suggests[labels.index(choice)]
         if st.button("确认使用该地址", type="primary", use_container_width=True):
@@ -190,6 +213,7 @@ def _search_address(ak: str) -> None:
             addr = chosen.get("address") or f"上海市{name}"
             dist = (
                 chosen.get("district")
+                or st.session_state.get("search_district")
                 or infer_district(addr, name, q, fallback="")
             )
             st.session_state.address = addr
