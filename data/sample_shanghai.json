@@ -1,0 +1,28 @@
+{
+  "city": "上海",
+  "district": "徐汇",
+  "community": "宜山路商圈",
+  "address": "上海市徐汇区宜山路",
+  "lng": 121.4288,
+  "lat": 31.1824,
+  "layout": "一室一厅",
+  "area": 30,
+  "decoration": "精装",
+  "building_age": 7,
+  "metro_band": "距站<500m",
+  "floor": "中高楼层",
+  "orientation": "南向",
+  "has_elevator": true,
+  "amenity": "成熟商圈/产业区",
+  "private_bath": true,
+  "search_q": "宜山路",
+  "search_mode": "fuzzy",
+  "user_weights": {
+    "metro": 1.0,
+    "decoration": 1.0,
+    "building_age": 1.0,
+    "area_layout": 1.0,
+    "floor_orient": 1.0,
+    "amenity": 1.0
+  }
+}
