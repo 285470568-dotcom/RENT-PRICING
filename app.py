@@ -54,7 +54,7 @@ CSS = """
   --accent: #3d3429;
   --song: "Songti SC", "STSong", "Noto Serif SC", "SimSun", serif;
 }
-html, body, [class*="css"], .stApp, .stMarkdown, .stText, label, p, span, div {
+html, body, .stApp, .stMarkdown, .stText, label, p {
   font-family: var(--song) !important;
   font-weight: 300 !important;
   color: var(--ink);
@@ -112,11 +112,38 @@ h1,h2,h3,h4,.hero-title,.out-h {
 .kv th { width: 5.5rem; color: var(--muted); letter-spacing: .08em; font-weight: 300 !important; }
 .strategy-ol { margin: .2rem 0 .8rem; padding-left: 1.1rem; }
 .strategy-ol li { margin: .35rem 0; line-height: 1.7; font-size: .92rem; }
+.map-full { width: 100%; margin: .4rem 0 1.2rem; }
 div[data-testid="stSidebar"] { background: #1a1713; }
 div[data-testid="stSidebar"] * { color: #efe8dc !important; font-family: var(--song) !important; font-weight: 300 !important; }
+/* 按钮文字：避免被全局深色字覆盖 */
 .stButton > button {
-  border-radius: 0 !important; background: #1c1915 !important; color: #f4efe6 !important;
-  border: 1px solid #1c1915 !important; letter-spacing: .12em; font-family: var(--song) !important; font-weight: 300 !important;
+  border-radius: 0 !important;
+  background: #1c1915 !important;
+  color: #f4efe6 !important;
+  border: 1px solid #1c1915 !important;
+  letter-spacing: .12em;
+  font-family: var(--song) !important;
+  font-weight: 300 !important;
+}
+.stButton > button *,
+.stButton > button p,
+.stButton > button span,
+.stButton > button div {
+  color: #f4efe6 !important;
+  font-family: var(--song) !important;
+  font-weight: 300 !important;
+}
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"],
+button[kind="primary"],
+button[kind="secondary"] {
+  color: #f4efe6 !important;
+}
+[data-testid="stBaseButton-primary"] *,
+[data-testid="stBaseButton-secondary"] *,
+button[kind="primary"] *,
+button[kind="secondary"] * {
+  color: #f4efe6 !important;
 }
 [data-testid="stMetricValue"], [data-testid="stDataFrame"] {
   font-family: var(--song) !important; font-weight: 300 !important;
