@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 from pricing.baidu_map import BaiduMapClient, ak_configured, get_ak, render_baidu_map_html
 from pricing.competitors import RADIUS_2KM, load_competitors
 from pricing.predictor import RentPredictor
+from pricing.rent_trend import build_rent_trend
 from pricing.shanghai_market import (
     AMENITY_OPTIONS,
     DISTRICT_NAMES,
@@ -346,25 +347,29 @@ def _render_outputs(pred: PricingPrediction, ak: str) -> None:
     m5.metric("组合评分", f"{pred.composite_score}")
     st.caption(pred.formula)
 
-    # 时点前后 6 个月价格曲线
+    # 时点前后 6 个月价格曲线（旧缓存无 trend 时现场补算）
     trend = getattr(pred, "rent_trend", None)
+    if not trend or not getattr(trend, "points", None):
+        dist = (
+            str(st.session_state.get("district") or "")
+            or infer_district(getattr(pred, "location", ""), fallback="上海")
+            or "上海"
+        )
+        trend = build_rent_trend(float(getattr(pred, "rent_mid", 0) or 0), dist)
     if trend and getattr(trend, "points", None):
         st.markdown("#### 租金走势（查询时点 ±6 个月）")
-        st.caption(
-            f"历史：{trend.history_note} ｜ 前瞻：{trend.forecast_note}"
-        )
+        st.caption(f"历史：{trend.history_note} ｜ 前瞻：{trend.forecast_note}")
         rows = trend.to_chart_rows()
-        chart_df = pd.DataFrame(rows).set_index("月份")[["建议月租"]]
-        st.line_chart(chart_df, height=280)
-        phase_df = pd.DataFrame(rows)
-        st.dataframe(
-            phase_df,
-            use_container_width=True,
-            hide_index=True,
-            height=min(420, 40 + 28 * len(phase_df)),
+        chart_df = pd.DataFrame(
+            {"建议月租(元)": [r["建议月租"] for r in rows]},
+            index=[r["月份"] for r in rows],
         )
+        st.line_chart(chart_df)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         if trend.disclaimer:
             st.caption(trend.disclaimer)
+    else:
+        st.warning("租金走势暂不可用，请重新点击「生成研判」。")
 
     # 2km 片区分析（核心新增）
     st.markdown(f"#### 附近片区租赁价格（{int(RADIUS_2KM)}m 内）")
@@ -545,7 +550,12 @@ def main() -> None:
 
     def _pred_is_stale(pred: object) -> bool:
         rep = getattr(pred, "area_report", None)
-        return rep is not None and not hasattr(rep, "area_basis_note")
+        if rep is not None and not hasattr(rep, "area_basis_note"):
+            return True
+        # 无租金走势曲线的旧缓存也要重算
+        if not getattr(pred, "rent_trend", None):
+            return True
+        return False
 
     if clicked:
         if not can_run:
