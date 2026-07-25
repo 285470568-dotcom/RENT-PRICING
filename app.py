@@ -173,12 +173,19 @@ def _search_address(ak: str) -> None:
                 st.session_state.suggests = hits
                 st.session_state.search_mode = mode
                 if hits:
-                    st.success(f"找到 {len(hits)} 处相关地址（已过滤无关/假地址）")
+                    st.success(f"找到 {len(hits)} 处相关地址")
                 else:
-                    tip = "请检查区+路名，或补充门牌号"
                     if not ak:
-                        tip += "；侧栏配置百度地图 AK 可显著提高精度"
-                    st.error(f"无可靠结果。{tip}")
+                        st.error(
+                            "本地库未收录该地址，且未配置百度地图 AK，所以无法定位。"
+                            "请点左上角展开侧栏，填写百度地图 AK 后再检索——"
+                            "不是您输入格式有问题。"
+                        )
+                    else:
+                        st.error(
+                            "百度未返回匹配点。可尝试：去掉多余空格、确认行政区是否正确，"
+                            "或把路名与门牌分填在两个框里。"
+                        )
     with c2:
         if st.session_state.geo_confirmed:
             st.success("已锁定 · 将分析该点 2km 片区")

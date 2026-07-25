@@ -112,10 +112,18 @@ class BaiduMapClient:
         q = (query or "").strip()
         district = _normalize_district_name(district)
         number = (number or "").strip()
+        # 用户把「宜山路455号」整段填在路名里时，拆出门牌，避免本地匹配失败
+        if not number:
+            q, number = _split_road_and_number(q)
+        else:
+            q, embedded = _split_road_and_number(q)
+            if embedded and not number:
+                number = embedded
         if not q and not number:
             return [], "empty"
 
-        # 组装完整检索串
+        # 地理编码用完整地址；本地/模糊只用路名核心（不含门牌）
+        road_core = q or _strip_house_number(number)
         place = f"{q}{number}".strip()
         full_address = _compose_shanghai_address(district, q, number)
 
@@ -132,18 +140,18 @@ class BaiduMapClient:
                         buckets.append(geo)
                         modes.append("geocode")
 
-                # 2) Place Search：限定行政区更准；未选区则全市但做相关性过滤
+                # 2) Place Search：限定行政区更准
                 region = _district_region(district) if district else city
-                place_hits = self._baidu_place_search(place or q, city=region, limit=limit)
-                # 未指定区且结果少：不要再灌各区假点；仅 suggestion 补充
-                sug_hits = self._baidu_suggest(place or q, city=city, limit=limit)
+                place_hits = self._baidu_place_search(place or road_core, city=region, limit=limit)
+                sug_hits = self._baidu_suggest(
+                    place or road_core, city=region if district else city, limit=limit
+                )
                 raw_baidu = place_hits + sug_hits
                 filtered = [
                     h
                     for h in raw_baidu
-                    if _is_relevant_hit(h, q=q, number=number, district=district)
+                    if _is_relevant_hit(h, q=road_core, number=number, district=district)
                 ]
-                # 指定区时再滤一次行政区
                 if district:
                     filtered = [
                         h
@@ -160,7 +168,7 @@ class BaiduMapClient:
             except Exception:
                 pass
 
-        local_hits = self._local_poi_suggest(place or q, limit=limit, district=district)
+        local_hits = self._local_poi_suggest(road_core, limit=limit, district=district)
         for item in local_hits:
             item.setdefault("mode", "catalog")
         if local_hits:
@@ -168,11 +176,10 @@ class BaiduMapClient:
             modes.append("catalog")
 
         fuzzy_hits = self._fuzzy_suggest(
-            place or q, limit=limit, skip_local=True, district=district
+            road_core, limit=limit, skip_local=True, district=district
         )
         for item in fuzzy_hits:
             item["mode"] = item.get("mode") or "fuzzy"
-        # 丢掉近似/合成误导点（除非显式允许）
         if not allow_approx:
             fuzzy_hits = [
                 h
@@ -374,15 +381,15 @@ class BaiduMapClient:
     def _local_poi_suggest(
         self, query: str, limit: int = 20, district: str = ""
     ) -> list[dict[str, Any]]:
-        """本地上海 POI 库：强子串命中。"""
-        q_raw = (query or "").strip()
+        """本地上海 POI 库：强子串命中（路名不含门牌）。"""
+        q_raw = _strip_house_number((query or "").strip())
         if len(q_raw) < 2:
             return []
         q = _normalize_query(q_raw)
         q_district = (district or _extract_district(q_raw) or "").strip()
+        q_district = _normalize_district_name(q_district)
         _, place_part = _split_district_prefix(q)
         keys = [k for k in (q_raw, q, place_part) if k and len(k) >= 2]
-        # 去掉纯区名 key，避免「徐汇」命中全区
         keys = [k for k in keys if k not in ("上海", q_district, f"{q_district}区")]
         if not keys:
             return []
@@ -392,6 +399,7 @@ class BaiduMapClient:
             addr = str(p.get("address") or "")
             brand = str(p.get("brand") or "")
             dist = str(p.get("district") or _extract_district(f"{name}{addr}"))
+            dist = _normalize_district_name(dist)
             blob = f"{name}{addr}{brand}"
             if not any(k in blob for k in keys):
                 continue
@@ -451,29 +459,54 @@ class BaiduMapClient:
         skip_local: bool = False,
         district: str = "",
     ) -> list[dict[str, Any]]:
-        """本地库/地标强匹配；不生成分区假地址。"""
-        q_raw = (query or "").strip()
+        """本地库/地标匹配；已选行政区时用路名子串宽松命中。"""
+        q_raw = _strip_house_number((query or "").strip())
         if not q_raw:
             return []
 
+        q_district = _normalize_district_name(district or _extract_district(q_raw) or "")
+
         local_hits: list[dict[str, Any]] = []
         if not skip_local:
-            local_hits = self._local_poi_suggest(q_raw, limit=limit, district=district)
+            local_hits = self._local_poi_suggest(q_raw, limit=limit, district=q_district)
             if len(local_hits) >= 2:
                 return local_hits
 
         pool = self._place_pool()
         q = _normalize_query(q_raw)
-        q_district = (district or _extract_district(q_raw) or "").strip()
+        _, place_part = _split_district_prefix(q)
+        core = place_part or q
         tokens = _query_tokens(q)
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for p in pool:
             name = str(p.get("name") or "")
             addr = str(p.get("address") or "")
-            dist = str(p.get("district") or _extract_district(f"{name}{addr}"))
+            dist = _normalize_district_name(
+                str(p.get("district") or _extract_district(f"{name}{addr}"))
+            )
             if q_district and dist and q_district != dist and q_district not in name:
                 continue
+
+            # 已选区：路名子串直接命中（解决「宜山路」对「宜山路商圈」）
+            blob = f"{name}{addr}"
+            if q_district and core and len(core) >= 2 and (core in blob or any(t in blob for t in tokens if len(t) >= 2)):
+                score = 120.0 if core in name or core in addr else 80.0
+                scored.append(
+                    (
+                        score,
+                        {
+                            "name": name,
+                            "address": addr,
+                            "district": dist,
+                            "lng": float(p["lng"]),
+                            "lat": float(p["lat"]),
+                            "match_score": score,
+                        },
+                    )
+                )
+                continue
+
             hit, score = _strong_match_score(
                 q=q,
                 q_raw=q_raw,
@@ -525,6 +558,39 @@ def _normalize_district_name(district: str) -> str:
     if d.startswith("浦东"):
         return "浦东"
     return d
+
+
+def _strip_house_number(text: str) -> str:
+    """去掉末尾门牌，保留路名/小区名。"""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    s = re.sub(
+        r"(\d+[-–]?\d*)\s*(号|弄|支弄|幢|栋|号楼|室|层)?\s*$",
+        "",
+        s,
+    ).strip(" ,，、/-")
+    return s or text.strip()
+
+
+def _split_road_and_number(text: str) -> tuple[str, str]:
+    """从『宜山路455号』拆出 (宜山路, 455号)。"""
+    s = (text or "").strip()
+    if not s:
+        return "", ""
+    m = re.search(
+        r"^(.*?)(\d+[-–]?\d*\s*(?:号|弄|支弄|幢|栋|号楼)?)\s*$",
+        s,
+    )
+    if not m:
+        return s, ""
+    road = (m.group(1) or "").strip(" ,，、/-")
+    num = (m.group(2) or "").strip()
+    if not road or len(road) < 2:
+        return s, ""
+    if not num.endswith(("号", "弄", "幢", "栋")) and re.fullmatch(r"\d+[-–]?\d*", num):
+        num = f"{num}号"
+    return road, num
 
 
 def _district_region(district: str) -> str:
